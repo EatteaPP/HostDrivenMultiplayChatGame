@@ -1,0 +1,13 @@
+package com.example.hostgame.websocket;
+
+public enum WsEventType {
+    MESSAGE_CREATED,
+    ROOM_STATE_UPDATED,
+    STAGE_CHANGED,
+    AVAILABLE_ACTIONS_UPDATED,
+    ACTION_ACCEPTED,
+    ACTION_REJECTED,
+    MESSAGE_REJECTED,
+    PLAYER_ELIMINATED,
+    GAME_ENDED
+}
