@@ -10,6 +10,8 @@ public record CreateRoomRequest(
         Integer discussionSeconds,
         Integer votingSeconds,
         Integer messageCooldownSeconds,
-        Integer maxRounds
+        Integer maxRounds,
+        Integer minPlayersToStart,
+        Integer endWhenAlivePlayersLE
 ) {
 }

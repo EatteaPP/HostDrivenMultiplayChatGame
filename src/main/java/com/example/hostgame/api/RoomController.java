@@ -8,6 +8,7 @@ import com.example.hostgame.dto.JoinRoomResponse;
 import com.example.hostgame.dto.PlayerPublicView;
 import com.example.hostgame.dto.RoomView;
 import com.example.hostgame.flow.GameFlowEngine;
+import com.example.hostgame.service.HostService;
 import com.example.hostgame.service.RoomService;
 import com.example.hostgame.websocket.WebSocketBroadcaster;
 import com.example.hostgame.websocket.WsEvent;
@@ -30,15 +31,18 @@ public class RoomController {
     private final RoomService roomService;
     private final GameFlowEngine gameFlowEngine;
     private final WebSocketBroadcaster webSocketBroadcaster;
+    private final HostService hostService;
 
     public RoomController(
             RoomService roomService,
             GameFlowEngine gameFlowEngine,
-            WebSocketBroadcaster webSocketBroadcaster
+            WebSocketBroadcaster webSocketBroadcaster,
+            HostService hostService
     ) {
         this.roomService = roomService;
         this.gameFlowEngine = gameFlowEngine;
         this.webSocketBroadcaster = webSocketBroadcaster;
+        this.hostService = hostService;
     }
 
     @PostMapping
@@ -93,5 +97,29 @@ public class RoomController {
     @PostMapping("/{roomId}/start")
     public RoomView startRoom(@PathVariable String roomId) {
         return RoomView.from(gameFlowEngine.startGame(roomId));
+    }
+
+    @PostMapping("/{roomId}/players/{playerId}/disconnect")
+    public RoomView disconnectPlayer(
+            @PathVariable String roomId,
+            @PathVariable String playerId
+    ) {
+        boolean disconnected = roomService.disconnectPlayer(roomId, playerId);
+        if (disconnected) {
+            var room = roomService.getRoom(roomId);
+            int playerNo = room.getPlayers().stream()
+                    .filter(player -> player.getPlayerId().equals(playerId))
+                    .map(player -> player.getPlayerNo())
+                    .findFirst()
+                    .orElse(-1);
+            hostService.announcePublicMessage(roomId, "Player " + playerNo + " disconnected and was eliminated.");
+            gameFlowEngine.handlePlayerAvailabilityChanged(roomId);
+        }
+        RoomView roomView = RoomView.from(roomService.getRoom(roomId));
+        webSocketBroadcaster.broadcastRoomEvent(
+                roomId,
+                WsEvent.of(WsEventType.ROOM_STATE_UPDATED, roomView)
+        );
+        return roomView;
     }
 }

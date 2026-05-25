@@ -27,6 +27,8 @@ import com.example.hostgame.websocket.WsEvent;
 import com.example.hostgame.websocket.WsEventType;
 import java.time.Instant;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -63,8 +65,10 @@ public class GameFlowEngine {
         if (room.getRoomStatus() != RoomStatus.WAITING || room.getCurrentStage() != GameStage.WAITING) {
             throw new ActionRejectedException("Only waiting rooms can be started.");
         }
-        if (room.getPlayers().isEmpty()) {
-            throw new ActionRejectedException("Cannot start a room without players.");
+        if (room.getPlayers().size() < room.getFlowConfig().getMinPlayersToStart()) {
+            throw new ActionRejectedException(
+                    "At least " + room.getFlowConfig().getMinPlayersToStart() + " players are required to start."
+            );
         }
 
         Instant now = Instant.now();
@@ -109,6 +113,21 @@ public class GameFlowEngine {
         return room;
     }
 
+    public synchronized GameRoom handlePlayerAvailabilityChanged(String roomId) {
+        GameRoom room = roomService.getRoom(roomId);
+        if (room.getRoomStatus() != RoomStatus.IN_PROGRESS || room.getCurrentStage() == GameStage.ENDED) {
+            return room;
+        }
+        Instant now = Instant.now();
+        if (room.getCurrentStage() == GameStage.VOTING && allAlivePlayersVoted(room)) {
+            return enterElimination(room, now);
+        }
+        if (alivePlayerCount(room) <= room.getFlowConfig().getEndWhenAlivePlayersLE()) {
+            return enterEnded(room, now, "FINAL_GROUP");
+        }
+        return room;
+    }
+
     private GameRoom enterVoting(GameRoom room, Instant now) {
         if (room.getCurrentStage() != GameStage.DISCUSSION) {
             return room;
@@ -138,6 +157,7 @@ public class GameFlowEngine {
         gameStore.saveRoom(room);
 
         hostService.announcePublicMessage(room.getRoomId(), "Voting ended. Resolving votes.");
+        hostService.announcePublicMessage(room.getRoomId(), buildVoteResultMessage(room));
         broadcastStageChanged(room);
 
         Optional<Player> eliminatedPlayer = resolveElimination(room);
@@ -159,7 +179,7 @@ public class GameFlowEngine {
             hostService.announcePublicMessage(room.getRoomId(), "Vote tied. No player was eliminated.");
         }
 
-        if (alivePlayerCount(room) <= 3) {
+        if (alivePlayerCount(room) <= room.getFlowConfig().getEndWhenAlivePlayersLE()) {
             return enterEnded(room, now, "FINAL_GROUP");
         }
         if (room.getRound() >= room.getFlowConfig().getMaxRounds()) {
@@ -169,9 +189,7 @@ public class GameFlowEngine {
     }
 
     private Optional<Player> resolveElimination(GameRoom room) {
-        Map<String, Long> voteCounts = room.getVotes().stream()
-                .filter(vote -> vote.getRound() == room.getRound())
-                .collect(Collectors.groupingBy(Vote::getTargetPlayerId, Collectors.counting()));
+        Map<String, Long> voteCounts = buildVoteCountsByTargetPlayerId(room);
         if (voteCounts.isEmpty()) {
             return Optional.empty();
         }
@@ -213,6 +231,53 @@ public class GameFlowEngine {
         return room;
     }
 
+    private Map<String, Long> buildVoteCountsByTargetPlayerId(GameRoom room) {
+        return room.getVotes().stream()
+                .filter(vote -> vote.getRound() == room.getRound())
+                .collect(Collectors.groupingBy(Vote::getTargetPlayerId, Collectors.counting()));
+    }
+
+    private String buildVoteResultMessage(GameRoom room) {
+        Map<String, Long> voteCounts = buildVoteCountsByTargetPlayerId(room);
+        if (voteCounts.isEmpty()) {
+            return "Vote result: no votes.";
+        }
+
+        Map<Integer, Long> voteByPlayerNo = voteCounts.entrySet().stream()
+                .map(entry -> Map.entry(resolvePlayerNo(room, entry.getKey()), entry.getValue()))
+                .filter(entry -> entry.getKey() != null && entry.getValue() > 0)
+                .sorted((a, b) -> {
+                    int byVoteDesc = Long.compare(b.getValue(), a.getValue());
+                    if (byVoteDesc != 0) {
+                        return byVoteDesc;
+                    }
+                    return Integer.compare(a.getKey(), b.getKey());
+                })
+                .collect(Collectors.toMap(
+                        Map.Entry::getKey,
+                        Map.Entry::getValue,
+                        (left, right) -> left,
+                        LinkedHashMap::new
+                ));
+
+        if (voteByPlayerNo.isEmpty()) {
+            return "Vote result: no votes.";
+        }
+
+        String summary = voteByPlayerNo.entrySet().stream()
+                .map(entry -> "Player " + entry.getKey() + " : " + entry.getValue() + " vote")
+                .collect(Collectors.joining(" / "));
+        return "Vote result: " + summary;
+    }
+
+    private Integer resolvePlayerNo(GameRoom room, String playerId) {
+        return room.getPlayers().stream()
+                .filter(player -> player.getPlayerId().equals(playerId))
+                .map(Player::getPlayerNo)
+                .findFirst()
+                .orElse(null);
+    }
+
     private boolean allAlivePlayersVoted(GameRoom room) {
         long alivePlayerCount = room.getPlayers().stream()
                 .filter(Player::isAlive)
@@ -250,6 +315,7 @@ public class GameFlowEngine {
                 room.getRoomId(),
                 WsEvent.of(WsEventType.ROOM_STATE_UPDATED, RoomView.from(room))
         );
+        hostService.announcePublicMessage(room.getRoomId(), buildFinalSummaryMessage(room));
         broadcastAvailableActions(room);
         return room;
     }
@@ -341,6 +407,22 @@ public class GameFlowEngine {
 
     private boolean isTraitor(Player player) {
         return player.getFaction() == Faction.WEREWOLF;
+    }
+
+    private String buildFinalSummaryMessage(GameRoom room) {
+        List<Player> traitors = room.getPlayers().stream()
+                .filter(this::isTraitor)
+                .toList();
+        String traitorList = traitors.isEmpty()
+                ? "none"
+                : traitors.stream()
+                        .map(player -> "Player " + player.getPlayerNo())
+                        .collect(Collectors.joining(", "));
+        boolean traitorWin = room.getPlayers().stream()
+                .filter(Player::isAlive)
+                .anyMatch(this::isTraitor);
+        String winnerText = traitorWin ? "Traitor side wins." : "Crew side wins.";
+        return "Final result: " + winnerText + " Traitor(s): " + traitorList + ".";
     }
 
     private long alivePlayerCount(GameRoom room) {

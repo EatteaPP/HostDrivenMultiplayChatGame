@@ -65,6 +65,8 @@ type RoomView = {
   votingSeconds: number;
   messageCooldownSeconds: number;
   maxRounds: number;
+  minPlayersToStart: number;
+  endWhenAlivePlayersLE: number;
 };
 
 type JoinRoomResponse = {
@@ -97,6 +99,8 @@ type CreateRoomPayload = {
   votingSeconds: number;
   messageCooldownSeconds: number;
   maxRounds: number;
+  minPlayersToStart: number;
+  endWhenAlivePlayersLE: number;
 };
 
 const api = {
@@ -120,6 +124,10 @@ const api = {
     }),
   addAiPlayer: (roomId: string) =>
     request<RoomView>(`/api/rooms/${roomId}/ai-players`, {
+      method: 'POST',
+    }),
+  disconnectPlayer: (roomId: string, playerId: string) =>
+    request<RoomView>(`/api/rooms/${roomId}/players/${playerId}/disconnect`, {
       method: 'POST',
     }),
   getActions: (roomId: string, playerId: string) =>
@@ -160,11 +168,22 @@ function App() {
   const [votingSeconds, setVotingSeconds] = React.useState(60);
   const [messageCooldownSeconds, setMessageCooldownSeconds] = React.useState(15);
   const [maxRounds, setMaxRounds] = React.useState(10);
+  const [minPlayersToStart, setMinPlayersToStart] = React.useState(4);
+  const [endWhenAlivePlayersLE, setEndWhenAlivePlayersLE] = React.useState(3);
   const [objectiveHint, setObjectiveHint] = React.useState('');
+  const [selectedVoteTargetId, setSelectedVoteTargetId] = React.useState<string | null>(null);
+  const messagesRef = React.useRef<HTMLDivElement | null>(null);
   const [nowMs, setNowMs] = React.useState(() => Date.now());
 
   const activeRoomId = activeRoom?.roomId ?? null;
   const currentPlayerId = currentPlayer?.playerId ?? null;
+  const activeRoomIdRef = React.useRef<string | null>(null);
+  const currentPlayerIdRef = React.useRef<string | null>(null);
+
+  React.useEffect(() => {
+    activeRoomIdRef.current = activeRoomId;
+    currentPlayerIdRef.current = currentPlayerId;
+  }, [activeRoomId, currentPlayerId]);
 
   const refreshRooms = React.useCallback(async () => {
     setLoading(true);
@@ -213,10 +232,39 @@ function App() {
   }, [refreshAvailableActions, activeRoom?.currentStage, activeRoom?.round, currentPlayer?.status]);
 
   React.useEffect(() => {
+    if (!activeRoom) {
+      setSelectedVoteTargetId(null);
+      return;
+    }
+    if (activeRoom.currentStage !== 'VOTING') {
+      setSelectedVoteTargetId(null);
+    }
+  }, [activeRoom?.currentStage, activeRoom?.round, activeRoom?.roomId]);
+
+  React.useEffect(() => {
     const timer = window.setInterval(() => {
       setNowMs(Date.now());
     }, 1000);
     return () => window.clearInterval(timer);
+  }, []);
+
+  React.useEffect(() => {
+    const disconnectOnLeave = () => {
+      const roomId = activeRoomIdRef.current;
+      const playerId = currentPlayerIdRef.current;
+      if (!roomId || !playerId) {
+        return;
+      }
+      const url = `/api/rooms/${roomId}/players/${playerId}/disconnect`;
+      navigator.sendBeacon(url, new Blob([], { type: 'application/json' }));
+    };
+
+    window.addEventListener('pagehide', disconnectOnLeave);
+    window.addEventListener('beforeunload', disconnectOnLeave);
+    return () => {
+      window.removeEventListener('pagehide', disconnectOnLeave);
+      window.removeEventListener('beforeunload', disconnectOnLeave);
+    };
   }, []);
 
   React.useEffect(() => {
@@ -245,6 +293,14 @@ function App() {
     };
   }, [activeRoomId, refreshAvailableActions]);
 
+  React.useEffect(() => {
+    const el = messagesRef.current;
+    if (!el) {
+      return;
+    }
+    el.scrollTop = el.scrollHeight;
+  }, [activeRoom?.messages.length]);
+
   async function createRoom() {
     setLoading(true);
     try {
@@ -256,6 +312,8 @@ function App() {
         votingSeconds,
         messageCooldownSeconds,
         maxRounds,
+        minPlayersToStart,
+        endWhenAlivePlayersLE,
       });
       setActiveRoom(room);
       setCurrentPlayer(null);
@@ -340,6 +398,10 @@ function App() {
     if (!activeRoom || !currentPlayer) {
       return;
     }
+    if (selectedVoteTargetId) {
+      return;
+    }
+    setSelectedVoteTargetId(targetPlayerId);
     setLoading(true);
     try {
       await api.submitAction(activeRoom.roomId, currentPlayer.playerId, 'SUBMIT_VOTE', {
@@ -349,6 +411,7 @@ function App() {
       await refreshAvailableActions();
       setStatus('Vote submitted');
     } catch (error) {
+      setSelectedVoteTargetId(null);
       setStatus(toMessage(error, 'Unable to vote'));
     } finally {
       setLoading(false);
@@ -438,6 +501,26 @@ function App() {
               disabled={loading}
             />
           </label>
+          <label>
+            開局最少人數
+            <input
+              type="number"
+              min={2}
+              value={minPlayersToStart}
+              onChange={(event) => setMinPlayersToStart(Number(event.target.value))}
+              disabled={loading}
+            />
+          </label>
+          <label>
+            結束存活門檻
+            <input
+              type="number"
+              min={1}
+              value={endWhenAlivePlayersLE}
+              onChange={(event) => setEndWhenAlivePlayersLE(Number(event.target.value))}
+              disabled={loading}
+            />
+          </label>
         </div>
 
         <div className="status-line">{status}</div>
@@ -482,6 +565,9 @@ function App() {
                     <p>
                       討論 {activeRoom.discussionSeconds}s / 投票 {activeRoom.votingSeconds}s / 發言 CD {activeRoom.messageCooldownSeconds}s
                     </p>
+                    <p>
+                      開局最少 {activeRoom.minPlayersToStart} 人 / 結束門檻存活 ≤ {activeRoom.endWhenAlivePlayersLE} 人
+                    </p>
                   </div>
                   <div className="actions compact-actions">
                     {currentPlayer && (
@@ -501,7 +587,11 @@ function App() {
                         <button type="button" onClick={addAiPlayer} disabled={loading || activeRoom.objective !== 'FIND_AI'}>
                           Add AI
                         </button>
-                        <button type="button" onClick={startGame} disabled={loading || activeRoom.players.length === 0}>
+                        <button
+                          type="button"
+                          onClick={startGame}
+                          disabled={loading || activeRoom.players.length < activeRoom.minPlayersToStart}
+                        >
                           Start
                         </button>
                       </>
@@ -521,7 +611,14 @@ function App() {
                   </aside>
 
                   <section className="chat-panel" aria-label="Chat log">
-                    <div className="messages">
+                    <div className="chat-stage-banner">
+                      <span className="chat-stage-main">第 {activeRoom.round} 輪</span>
+                      <span className="chat-stage-main">{stageLabel(activeRoom.currentStage)}</span>
+                      <span className="chat-stage-main">
+                        {stageRemainingSeconds !== null ? `剩餘 ${stageRemainingSeconds} 秒` : '等待開始'}
+                      </span>
+                    </div>
+                    <div className="messages" ref={messagesRef}>
                       {activeRoom.messages.length === 0 ? (
                         <div className="empty-state">No messages yet</div>
                       ) : (
@@ -575,8 +672,10 @@ function App() {
                             type="button"
                             key={target.playerId}
                             onClick={() => submitVote(target.playerId)}
-                            disabled={loading}
+                            disabled={loading || !!selectedVoteTargetId}
+                            className={selectedVoteTargetId === target.playerId ? 'vote-selected' : undefined}
                           >
+                            {selectedVoteTargetId === target.playerId ? '✓ ' : ''}
                             Vote {playerLabelById(activeRoom, target.playerId, target.playerNo)}
                           </button>
                         ))}

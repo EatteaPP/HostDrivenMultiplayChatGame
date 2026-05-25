@@ -52,6 +52,9 @@ class GameFlowEngineTest {
     void startGameMovesWaitingRoomToDiscussionAndBroadcastsEvents() {
         GameRoom room = roomService.createRoom(null);
         String playerId = roomService.joinRoom(room.getRoomId()).getPlayerId();
+        roomService.joinRoom(room.getRoomId());
+        roomService.joinRoom(room.getRoomId());
+        roomService.joinRoom(room.getRoomId());
 
         GameRoom startedRoom = gameFlowEngine.startGame(room.getRoomId());
 
@@ -78,6 +81,9 @@ class GameFlowEngineTest {
     void startGameRejectsAlreadyStartedRoom() {
         GameRoom room = roomService.createRoom(null);
         roomService.joinRoom(room.getRoomId());
+        roomService.joinRoom(room.getRoomId());
+        roomService.joinRoom(room.getRoomId());
+        roomService.joinRoom(room.getRoomId());
         gameFlowEngine.startGame(room.getRoomId());
 
         assertThatThrownBy(() -> gameFlowEngine.startGame(room.getRoomId()))
@@ -87,6 +93,9 @@ class GameFlowEngineTest {
     @Test
     void discussionTimeoutMovesRoomToVoting() {
         GameRoom room = roomService.createRoom(null);
+        roomService.joinRoom(room.getRoomId());
+        roomService.joinRoom(room.getRoomId());
+        roomService.joinRoom(room.getRoomId());
         roomService.joinRoom(room.getRoomId());
         GameRoom startedRoom = gameFlowEngine.startGame(room.getRoomId());
         Instant timeout = startedRoom.getStageEndsAt();
@@ -119,6 +128,9 @@ class GameFlowEngineTest {
         assertThat(nextDiscussionRoom.getCurrentStage()).isEqualTo(GameStage.DISCUSSION);
         assertThat(nextDiscussionRoom.getRound()).isEqualTo(2);
         assertThat(player2.isAlive()).isFalse();
+        assertThat(nextDiscussionRoom.getMessages()).anyMatch(message ->
+                message.getContent().contains("Vote result: Player 2 : 4 vote")
+        );
         verify(broadcaster, atLeastOnce()).broadcastRoomEvent(eq(room.getRoomId()), org.mockito.ArgumentMatchers.<WsEvent<?>>any());
     }
 
@@ -141,6 +153,9 @@ class GameFlowEngineTest {
         assertThat(nextDiscussionRoom.getCurrentStage()).isEqualTo(GameStage.DISCUSSION);
         assertThat(player1.isAlive()).isTrue();
         assertThat(player2.isAlive()).isTrue();
+        assertThat(nextDiscussionRoom.getMessages()).anyMatch(message ->
+                message.getContent().contains("Vote result:")
+        );
     }
 
     @Test
@@ -163,6 +178,9 @@ class GameFlowEngineTest {
         assertThat(endedRoom.getCurrentStage()).isEqualTo(GameStage.ENDED);
         assertThat(endedRoom.getEndedAt()).isNotNull();
         assertThat(player2.isAlive()).isFalse();
+        assertThat(endedRoom.getMessages()).anyMatch(message ->
+                message.getContent().startsWith("Final result:")
+        );
         verify(broadcaster, atLeastOnce()).broadcastRoomEvent(eq(room.getRoomId()), org.mockito.ArgumentMatchers.<WsEvent<?>>any());
     }
 }

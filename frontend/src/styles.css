@@ -90,7 +90,7 @@ p,
 .room-config-grid {
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(8, minmax(0, 1fr));
   margin-bottom: 14px;
 }
 
@@ -230,9 +230,27 @@ p,
   border-left: 1px solid #eceff3;
   display: grid;
   gap: 12px;
-  grid-template-rows: minmax(320px, 1fr) auto auto;
+  grid-template-rows: auto minmax(320px, 1fr) auto auto;
   min-height: 480px;
   padding-left: 14px;
+}
+
+.chat-stage-banner {
+  align-items: center;
+  background: #f3f6fb;
+  border: 1px solid #d9dde5;
+  border-radius: 8px;
+  display: flex;
+  gap: 14px;
+  min-height: 52px;
+  padding: 8px 12px;
+}
+
+.chat-stage-main {
+  color: #1f2b3d;
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1.2;
 }
 
 .messages {
@@ -285,6 +303,13 @@ p,
   flex-wrap: wrap;
   gap: 8px;
   padding-top: 12px;
+}
+
+.vote-panel .vote-selected {
+  background: #1f5f49;
+  border-color: #56d39b;
+  box-shadow: 0 0 0 2px rgba(86, 211, 155, 0.35);
+  color: #ffffff;
 }
 
 @media (max-width: 760px) {

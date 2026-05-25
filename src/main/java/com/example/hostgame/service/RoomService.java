@@ -4,6 +4,7 @@ import com.example.hostgame.domain.GameRoom;
 import com.example.hostgame.domain.GameType;
 import com.example.hostgame.domain.Player;
 import com.example.hostgame.domain.PlayerControllerType;
+import com.example.hostgame.domain.PlayerStatus;
 import com.example.hostgame.domain.RoomObjective;
 import com.example.hostgame.domain.RoomStatus;
 import com.example.hostgame.dto.CreateRoomRequest;
@@ -74,6 +75,17 @@ public class RoomService {
         if (request.maxRounds() != null) {
             room.getFlowConfig().setMaxRounds(requirePositive(request.maxRounds(), "maxRounds"));
         }
+        if (request.minPlayersToStart() != null) {
+            room.getFlowConfig().setMinPlayersToStart(
+                    requireAtLeast(request.minPlayersToStart(), 2, "minPlayersToStart")
+            );
+        }
+        if (request.endWhenAlivePlayersLE() != null) {
+            room.getFlowConfig().setEndWhenAlivePlayersLE(
+                    requireAtLeast(request.endWhenAlivePlayersLE(), 1, "endWhenAlivePlayersLE")
+            );
+        }
+        validateFlowThresholds(room);
     }
 
     private int requirePositive(int value, String fieldName) {
@@ -81,6 +93,21 @@ public class RoomService {
             throw new ActionRejectedException(fieldName + " must be greater than 0.");
         }
         return value;
+    }
+
+    private int requireAtLeast(int value, int min, String fieldName) {
+        if (value < min) {
+            throw new ActionRejectedException(fieldName + " must be at least " + min + ".");
+        }
+        return value;
+    }
+
+    private void validateFlowThresholds(GameRoom room) {
+        int minPlayersToStart = room.getFlowConfig().getMinPlayersToStart();
+        int endWhenAlivePlayersLE = room.getFlowConfig().getEndWhenAlivePlayersLE();
+        if (endWhenAlivePlayersLE >= minPlayersToStart) {
+            throw new ActionRejectedException("endWhenAlivePlayersLE must be less than minPlayersToStart.");
+        }
     }
 
     public List<GameRoom> findRooms(RoomStatus status) {
@@ -105,6 +132,20 @@ public class RoomService {
             throw new ActionRejectedException("AI players are only allowed when objective is FIND_AI.");
         }
         return joinRoom(roomId, PlayerControllerType.AI);
+    }
+
+    public boolean disconnectPlayer(String roomId, String playerId) {
+        GameRoom room = getRoom(roomId);
+        Player player = room.getPlayers().stream()
+                .filter(candidate -> candidate.getPlayerId().equals(playerId))
+                .findFirst()
+                .orElseThrow(() -> new ActionRejectedException("Player is not in the room."));
+        if (!player.isAlive()) {
+            return false;
+        }
+        player.setStatus(PlayerStatus.ELIMINATED);
+        gameStore.saveRoom(room);
+        return true;
     }
 
     private Player joinRoom(String roomId, PlayerControllerType controllerType) {

@@ -26,7 +26,9 @@ public record RoomView(
         int discussionSeconds,
         int votingSeconds,
         int messageCooldownSeconds,
-        int maxRounds
+        int maxRounds,
+        int minPlayersToStart,
+        int endWhenAlivePlayersLE
 ) {
 
     public static RoomView from(GameRoom room) {
@@ -52,7 +54,9 @@ public record RoomView(
                 room.getFlowConfig().getDiscussionSeconds(),
                 room.getFlowConfig().getVotingSeconds(),
                 room.getFlowConfig().getMessageCooldownSeconds(),
-                room.getFlowConfig().getMaxRounds()
+                room.getFlowConfig().getMaxRounds(),
+                room.getFlowConfig().getMinPlayersToStart(),
+                room.getFlowConfig().getEndWhenAlivePlayersLE()
         );
     }
 }

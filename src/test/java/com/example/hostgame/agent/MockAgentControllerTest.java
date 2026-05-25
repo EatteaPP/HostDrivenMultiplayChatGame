@@ -47,6 +47,8 @@ class MockAgentControllerTest {
                 null,
                 null,
                 null,
+                null,
+                null,
                 null
         ));
         Player ai = roomService.joinAiPlayer(room.getRoomId());
@@ -65,6 +67,8 @@ class MockAgentControllerTest {
         GameRoom room = roomService.createRoom(new CreateRoomRequest(
                 null,
                 RoomObjective.FIND_AI,
+                null,
+                null,
                 null,
                 null,
                 null,

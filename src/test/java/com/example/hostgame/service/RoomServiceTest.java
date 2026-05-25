@@ -7,6 +7,7 @@ import com.example.hostgame.domain.GameRoom;
 import com.example.hostgame.domain.GameStage;
 import com.example.hostgame.domain.Player;
 import com.example.hostgame.domain.PlayerControllerType;
+import com.example.hostgame.domain.PlayerStatus;
 import com.example.hostgame.domain.RoomStatus;
 import com.example.hostgame.domain.RoomObjective;
 import com.example.hostgame.dto.CreateRoomRequest;
@@ -32,7 +33,9 @@ class RoomServiceTest {
                 120,
                 45,
                 12,
-                10
+                10,
+                4,
+                3
         ));
 
         assertThat(room.getRoomId()).isNotBlank();
@@ -89,5 +92,16 @@ class RoomServiceTest {
         assertThatThrownBy(() -> roomService.joinAiPlayer(room.getRoomId()))
                 .isInstanceOf(ActionRejectedException.class)
                 .hasMessageContaining("FIND_AI");
+    }
+
+    @Test
+    void disconnectPlayerMarksAlivePlayerAsEliminated() {
+        GameRoom room = roomService.createRoom(null);
+        Player player = roomService.joinRoom(room.getRoomId());
+
+        boolean changed = roomService.disconnectPlayer(room.getRoomId(), player.getPlayerId());
+
+        assertThat(changed).isTrue();
+        assertThat(player.getStatus()).isEqualTo(PlayerStatus.ELIMINATED);
     }
 }
