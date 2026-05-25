@@ -4,6 +4,7 @@ import { Client } from '@stomp/stompjs';
 import './styles.css';
 
 type GameType = 'AI_CHAT_WEREWOLF';
+type RoomObjective = 'FIND_TRAITOR' | 'FIND_AI';
 type RoomStatus = 'WAITING' | 'IN_PROGRESS' | 'ENDED';
 type GameStage = 'WAITING' | 'DISCUSSION' | 'VOTING' | 'ELIMINATION' | 'ENDED';
 type PlayerStatus = 'ALIVE' | 'ELIMINATED' | 'DEAD';
@@ -48,6 +49,8 @@ type AvailableActionsUpdatedView = {
 type RoomView = {
   roomId: string;
   gameType: GameType;
+  objective: RoomObjective;
+  objectiveHint: string | null;
   roomStatus: RoomStatus;
   currentStage: GameStage;
   players: PlayerPublicView[];
@@ -58,6 +61,10 @@ type RoomView = {
   stageEndsAt: string | null;
   endedAt: string | null;
   round: number;
+  discussionSeconds: number;
+  votingSeconds: number;
+  messageCooldownSeconds: number;
+  maxRounds: number;
 };
 
 type JoinRoomResponse = {
@@ -82,13 +89,23 @@ type ActionResult = {
   result: unknown;
 };
 
+type CreateRoomPayload = {
+  gameType: GameType;
+  objective: RoomObjective;
+  objectiveHint: string;
+  discussionSeconds: number;
+  votingSeconds: number;
+  messageCooldownSeconds: number;
+  maxRounds: number;
+};
+
 const api = {
   listWaitingRooms: () => request<RoomView[]>('/api/rooms?status=WAITING'),
-  createRoom: () =>
+  createRoom: (payload: CreateRoomPayload) =>
     request<RoomView>('/api/rooms', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ gameType: 'AI_CHAT_WEREWOLF' }),
+      body: JSON.stringify(payload),
     }),
   joinRoom: (roomId: string) =>
     request<JoinRoomResponse>(`/api/rooms/${roomId}/join`, {
@@ -138,6 +155,13 @@ function App() {
   const [messageText, setMessageText] = React.useState('');
   const [loading, setLoading] = React.useState(false);
   const [status, setStatus] = React.useState('Ready');
+  const [objective, setObjective] = React.useState<RoomObjective>('FIND_TRAITOR');
+  const [discussionSeconds, setDiscussionSeconds] = React.useState(180);
+  const [votingSeconds, setVotingSeconds] = React.useState(60);
+  const [messageCooldownSeconds, setMessageCooldownSeconds] = React.useState(15);
+  const [maxRounds, setMaxRounds] = React.useState(10);
+  const [objectiveHint, setObjectiveHint] = React.useState('');
+  const [nowMs, setNowMs] = React.useState(() => Date.now());
 
   const activeRoomId = activeRoom?.roomId ?? null;
   const currentPlayerId = currentPlayer?.playerId ?? null;
@@ -189,6 +213,13 @@ function App() {
   }, [refreshAvailableActions, activeRoom?.currentStage, activeRoom?.round, currentPlayer?.status]);
 
   React.useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  React.useEffect(() => {
     if (!activeRoomId) {
       return undefined;
     }
@@ -217,7 +248,15 @@ function App() {
   async function createRoom() {
     setLoading(true);
     try {
-      const room = await api.createRoom();
+      const room = await api.createRoom({
+        gameType: 'AI_CHAT_WEREWOLF',
+        objective,
+        objectiveHint,
+        discussionSeconds,
+        votingSeconds,
+        messageCooldownSeconds,
+        maxRounds,
+      });
       setActiveRoom(room);
       setCurrentPlayer(null);
       setAvailableActions([]);
@@ -318,6 +357,10 @@ function App() {
 
   const sendMessageAction = availableActions.find((action) => action.actionType === 'SEND_MESSAGE');
   const voteAction = availableActions.find((action) => action.actionType === 'SUBMIT_VOTE');
+  const stageRemainingSeconds = getRemainingSeconds(activeRoom?.stageEndsAt ?? null, nowMs);
+  const sendCooldownRemainingSeconds = getSendCooldownRemainingSeconds(activeRoom, currentPlayer, nowMs);
+  const sendDisabledByCooldown = sendCooldownRemainingSeconds > 0;
+  const sendButtonLabel = sendDisabledByCooldown ? `Send (${sendCooldownRemainingSeconds})` : 'Send';
 
   return (
     <main className="app-shell">
@@ -336,6 +379,66 @@ function App() {
             </button>
           </div>
         </div>
+        <div className="room-config-grid">
+          <label>
+            Objective
+            <select value={objective} onChange={(event) => setObjective(event.target.value as RoomObjective)} disabled={loading}>
+              <option value="FIND_TRAITOR">找出叛徒</option>
+              <option value="FIND_AI">找出 AI</option>
+            </select>
+          </label>
+          <label>
+            本輪辨識目標
+            <input
+              type="text"
+              maxLength={120}
+              value={objectiveHint}
+              onChange={(event) => setObjectiveHint(event.target.value)}
+              placeholder="例如：找出女性、找出 I 人"
+              disabled={loading}
+            />
+          </label>
+          <label>
+            討論秒數
+            <input
+              type="number"
+              min={10}
+              value={discussionSeconds}
+              onChange={(event) => setDiscussionSeconds(Number(event.target.value))}
+              disabled={loading}
+            />
+          </label>
+          <label>
+            投票秒數
+            <input
+              type="number"
+              min={10}
+              value={votingSeconds}
+              onChange={(event) => setVotingSeconds(Number(event.target.value))}
+              disabled={loading}
+            />
+          </label>
+          <label>
+            發言 CD 秒數
+            <input
+              type="number"
+              min={1}
+              value={messageCooldownSeconds}
+              onChange={(event) => setMessageCooldownSeconds(Number(event.target.value))}
+              disabled={loading}
+            />
+          </label>
+          <label>
+            最大輪次
+            <input
+              type="number"
+              min={1}
+              value={maxRounds}
+              onChange={(event) => setMaxRounds(Number(event.target.value))}
+              disabled={loading}
+            />
+          </label>
+        </div>
 
         <div className="status-line">{status}</div>
 
@@ -350,8 +453,9 @@ function App() {
                   <div>
                     <div className="room-title">Room {shortId(room.roomId)}</div>
                     <div className="room-meta">
-                      {room.currentStage} | {room.players.length} players
+                      {objectiveLabel(room.objective)} | {room.currentStage} | {room.players.length} players
                     </div>
+                    {room.objectiveHint && <div className="room-meta">{room.objectiveHint}</div>}
                   </div>
                   <button type="button" onClick={() => joinRoom(room.roomId)} disabled={loading}>
                     Join
@@ -368,14 +472,33 @@ function App() {
                   <div>
                     <h2>Room {shortId(activeRoom.roomId)}</h2>
                     <p>
-                      {activeRoom.roomStatus} | {activeRoom.currentStage} | Round {activeRoom.round}
+                      {objectiveLabel(activeRoom.objective)} | {activeRoom.roomStatus} | {activeRoom.currentStage} | Round {activeRoom.round}/{activeRoom.maxRounds}
+                    </p>
+                    {activeRoom.objectiveHint && <p>{activeRoom.objectiveHint}</p>}
+                    <p>
+                      目前階段：{stageLabel(activeRoom.currentStage)}
+                      {stageRemainingSeconds !== null ? `（剩餘 ${stageRemainingSeconds} 秒）` : ''}
+                    </p>
+                    <p>
+                      討論 {activeRoom.discussionSeconds}s / 投票 {activeRoom.votingSeconds}s / 發言 CD {activeRoom.messageCooldownSeconds}s
                     </p>
                   </div>
                   <div className="actions compact-actions">
-                    {currentPlayer && <span className="player-badge">Player {currentPlayer.playerNo}</span>}
+                    {currentPlayer && (
+                      <span
+                        className="player-badge"
+                        style={{
+                          backgroundColor: colorValue(currentPlayer.color),
+                          borderColor: colorValue(currentPlayer.color),
+                          color: '#ffffff',
+                        }}
+                      >
+                        {playerLabel(currentPlayer.playerNo, currentPlayer.color)}
+                      </span>
+                    )}
                     {activeRoom.currentStage === 'WAITING' && (
                       <>
-                        <button type="button" onClick={addAiPlayer} disabled={loading}>
+                        <button type="button" onClick={addAiPlayer} disabled={loading || activeRoom.objective !== 'FIND_AI'}>
                           Add AI
                         </button>
                         <button type="button" onClick={startGame} disabled={loading || activeRoom.players.length === 0}>
@@ -391,7 +514,7 @@ function App() {
                     {activeRoom.players.map((player) => (
                       <div className="player-row" key={player.playerId}>
                         <span className="color-dot" style={{ backgroundColor: colorValue(player.color) }} />
-                        <span>Player {player.playerNo}</span>
+                        <span>{playerLabel(player.playerNo, player.color)}</span>
                         <span>{player.status}</span>
                       </div>
                     ))}
@@ -403,9 +526,15 @@ function App() {
                         <div className="empty-state">No messages yet</div>
                       ) : (
                         activeRoom.messages.map((message) => (
-                          <article className={`message ${message.messageType.toLowerCase()}`} key={message.messageId}>
+                          <article
+                            className={`message ${message.messageType.toLowerCase()}`}
+                            key={message.messageId}
+                            style={messageStyle(message, activeRoom)}
+                          >
                             <div className="message-speaker">
-                              {message.messageType === 'HOST' ? 'Host' : `Player ${message.playerNo}`}
+                              {message.messageType === 'HOST'
+                                ? 'Host'
+                                : playerLabelById(activeRoom, message.playerId, message.playerNo)}
                             </div>
                             <p>{message.content}</p>
                           </article>
@@ -427,8 +556,12 @@ function App() {
                           placeholder="Message"
                           disabled={loading || !sendMessageAction}
                         />
-                        <button type="button" onClick={sendMessage} disabled={loading || !sendMessageAction || !messageText.trim()}>
-                          Send
+                        <button
+                          type="button"
+                          onClick={sendMessage}
+                          disabled={loading || !sendMessageAction || !messageText.trim() || sendDisabledByCooldown}
+                        >
+                          {sendButtonLabel}
                         </button>
                       </div>
                     ) : (
@@ -444,7 +577,7 @@ function App() {
                             onClick={() => submitVote(target.playerId)}
                             disabled={loading}
                           >
-                            Vote Player {target.playerNo}
+                            Vote {playerLabelById(activeRoom, target.playerId, target.playerNo)}
                           </button>
                         ))}
                       </div>
@@ -510,6 +643,82 @@ function colorValue(color: string) {
     gray: '#7a8494',
   };
   return values[color] ?? '#7a8494';
+}
+
+function objectiveLabel(objective: RoomObjective) {
+  return objective === 'FIND_AI' ? '找出 AI' : '找出叛徒';
+}
+
+function playerLabel(playerNo: number, color: string) {
+  return `Player ${playerNo} (${colorName(color)})`;
+}
+
+function playerLabelById(room: RoomView, playerId: string | null, fallbackPlayerNo: number | null) {
+  if (!playerId) {
+    return fallbackPlayerNo == null ? 'Player ?' : `Player ${fallbackPlayerNo}`;
+  }
+  const player = room.players.find((item) => item.playerId === playerId);
+  if (!player) {
+    return fallbackPlayerNo == null ? 'Player ?' : `Player ${fallbackPlayerNo}`;
+  }
+  return playerLabel(player.playerNo, player.color);
+}
+
+function messageStyle(message: ChatMessageView, room: RoomView): React.CSSProperties {
+  if (message.messageType !== 'PLAYER' || !message.playerId) {
+    return {};
+  }
+  const player = room.players.find((item) => item.playerId === message.playerId);
+  if (!player) {
+    return {};
+  }
+  return {
+    borderLeft: `4px solid ${colorValue(player.color)}`,
+  };
+}
+
+function colorName(color: string) {
+  return color.toUpperCase();
+}
+
+function stageLabel(stage: GameStage) {
+  const labels: Record<GameStage, string> = {
+    WAITING: '等待開始',
+    DISCUSSION: '討論階段',
+    VOTING: '投票階段',
+    ELIMINATION: '淘汰階段',
+    ENDED: '結束階段',
+  };
+  return labels[stage];
+}
+
+function getRemainingSeconds(stageEndsAt: string | null, nowMs: number) {
+  if (!stageEndsAt) {
+    return null;
+  }
+  const endMs = new Date(stageEndsAt).getTime();
+  if (Number.isNaN(endMs)) {
+    return null;
+  }
+  return Math.max(0, Math.ceil((endMs - nowMs) / 1000));
+}
+
+function getSendCooldownRemainingSeconds(room: RoomView | null, player: PlayerPublicView | null, nowMs: number) {
+  if (!room || !player) {
+    return 0;
+  }
+  const lastMyMessage = [...room.messages]
+    .reverse()
+    .find((message) => message.playerId === player.playerId);
+  if (!lastMyMessage) {
+    return 0;
+  }
+  const lastMessageMs = new Date(lastMyMessage.createdAt).getTime();
+  if (Number.isNaN(lastMessageMs)) {
+    return 0;
+  }
+  const cooldownEndsAt = lastMessageMs + room.messageCooldownSeconds * 1000;
+  return Math.max(0, Math.ceil((cooldownEndsAt - nowMs) / 1000));
 }
 
 declare global {

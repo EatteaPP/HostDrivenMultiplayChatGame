@@ -9,6 +9,8 @@ public class GameRoom {
 
     private String roomId = UUID.randomUUID().toString();
     private GameType gameType = GameType.AI_CHAT_WEREWOLF;
+    private RoomObjective objective = RoomObjective.FIND_TRAITOR;
+    private String objectiveHint;
     private RoomStatus roomStatus = RoomStatus.WAITING;
     private GameStage currentStage = GameStage.WAITING;
     private List<Player> players = new ArrayList<>();
@@ -38,6 +40,22 @@ public class GameRoom {
 
     public void setGameType(GameType gameType) {
         this.gameType = gameType;
+    }
+
+    public RoomObjective getObjective() {
+        return objective;
+    }
+
+    public void setObjective(RoomObjective objective) {
+        this.objective = objective;
+    }
+
+    public String getObjectiveHint() {
+        return objectiveHint;
+    }
+
+    public void setObjectiveHint(String objectiveHint) {
+        this.objectiveHint = objectiveHint;
     }
 
     public RoomStatus getRoomStatus() {

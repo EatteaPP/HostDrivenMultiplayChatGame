@@ -4,7 +4,8 @@
 
 這份文件說明如何在本機 demo Host-driven Multiplayer Action Framework MVP。
 
-目前 demo 重點是「AI 混入聊天室」的主流程：建立房間、加入玩家、加入 Mock AI、開始遊戲、發言、進入投票、淘汰玩家、遊戲結束。
+目前 demo 重點是 Host-driven 主流程：建立房間、加入玩家、開始遊戲、發言、進入投票、淘汰玩家、遊戲結束。
+若房間目標設為 `找出AI`，可再加入 Mock AI 進行 AI 模式驗證。
 
 ## Prerequisites
 
@@ -58,6 +59,12 @@ http://127.0.0.1:5173
 ### 1. Create Room
 
 1. 開啟前端頁面。
+2. 設定房間參數：
+   - Objective（`找出叛徒` / `找出AI`）
+   - 討論秒數
+   - 投票秒數
+   - 發言 CD 秒數
+   - 最大輪次（預設 10）
 2. 點擊 `Create Room`。
 3. 頁面右側會出現目前房間資訊。
 
@@ -66,6 +73,7 @@ http://127.0.0.1:5173
 - Room status 是 `WAITING`
 - Stage 是 `WAITING`
 - 玩家列表目前可能是空的
+- 房間資訊會顯示目標、秒數設定與輪次上限
 
 ### 2. Join As Human Player
 
@@ -77,9 +85,10 @@ http://127.0.0.1:5173
 - 玩家列表出現 `Player 1`
 - 前端不會顯示 AI / HUMAN 身份
 
-### 3. Add Mock AI
+### 3. (Optional) Add Mock AI
 
-1. 在房間右上角點擊 `Add AI`。
+1. 將 Objective 設為 `找出AI` 建立房間。
+2. 在房間右上角點擊 `Add AI`。
 
 預期結果：
 
@@ -100,7 +109,7 @@ http://127.0.0.1:5173
 Game started. Discussion phase begins.
 ```
 
-- Mock AI 會自動發言：
+- 若有加入 Mock AI，AI 會自動發言：
 
 ```text
 I am thinking this through.
@@ -133,12 +142,14 @@ I am thinking this through.
 ### 7. Game End
 
 當存活玩家數量小於或等於 3 時，後端會進入 `ENDED`。
+若輪次達到房間設定的最大輪次（例如 10）仍未結束，也會強制進入 `ENDED`。
 
 預期結果：
 
 - Stage 變成 `ENDED`
 - 前端不再取得可用 action
-- `GAME_ENDED` event 才會揭露 AI / HUMAN 身份
+- `GAME_ENDED` event 才會揭露身份資訊（含陣營）
+- 勝負判定（目前 MVP 版）：只要任一叛徒存活，叛徒方勝；否則平民方勝
 
 ## Useful API Checks
 
@@ -153,7 +164,7 @@ curl.exe http://127.0.0.1:8080/api/rooms?status=WAITING
 ```powershell
 curl.exe -X POST http://127.0.0.1:8080/api/rooms `
   -H "Content-Type: application/json" `
-  -d "{\"gameType\":\"AI_CHAT_WEREWOLF\"}"
+  -d "{\"gameType\":\"AI_CHAT_WEREWOLF\",\"objective\":\"FIND_TRAITOR\",\"discussionSeconds\":180,\"votingSeconds\":60,\"messageCooldownSeconds\":15,\"maxRounds\":10}"
 ```
 
 ### Join Room
@@ -169,6 +180,8 @@ curl.exe -X POST http://127.0.0.1:8080/api/rooms/{roomId}/join `
 ```powershell
 curl.exe -X POST http://127.0.0.1:8080/api/rooms/{roomId}/ai-players
 ```
+
+注意：只有房間目標為 `FIND_AI` 時，後端才允許加入 AI player。
 
 ### Start Game
 

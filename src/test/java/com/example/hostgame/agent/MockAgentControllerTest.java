@@ -6,6 +6,8 @@ import com.example.hostgame.domain.GameRoom;
 import com.example.hostgame.domain.GameStage;
 import com.example.hostgame.domain.Player;
 import com.example.hostgame.domain.PlayerControllerType;
+import com.example.hostgame.domain.RoomObjective;
+import com.example.hostgame.dto.CreateRoomRequest;
 import com.example.hostgame.service.AvailableActionService;
 import com.example.hostgame.service.ChatService;
 import com.example.hostgame.service.PlayerActionService;
@@ -38,7 +40,15 @@ class MockAgentControllerTest {
 
     @Test
     void mockAgentSendsMessageThroughPlayerActionService() {
-        GameRoom room = roomService.createRoom(null);
+        GameRoom room = roomService.createRoom(new CreateRoomRequest(
+                null,
+                RoomObjective.FIND_AI,
+                null,
+                null,
+                null,
+                null,
+                null
+        ));
         Player ai = roomService.joinAiPlayer(room.getRoomId());
         room.setCurrentStage(GameStage.DISCUSSION);
         room.setRound(1);
@@ -52,7 +62,15 @@ class MockAgentControllerTest {
 
     @Test
     void mockAgentVotesThroughPlayerActionService() {
-        GameRoom room = roomService.createRoom(null);
+        GameRoom room = roomService.createRoom(new CreateRoomRequest(
+                null,
+                RoomObjective.FIND_AI,
+                null,
+                null,
+                null,
+                null,
+                null
+        ));
         Player ai = roomService.joinAiPlayer(room.getRoomId());
         Player human = roomService.joinRoom(room.getRoomId());
         room.setCurrentStage(GameStage.VOTING);

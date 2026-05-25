@@ -2,12 +2,15 @@ package com.example.hostgame.flow;
 
 import com.example.hostgame.agent.AgentCoordinator;
 import com.example.hostgame.domain.GameRoom;
+import com.example.hostgame.domain.GameRole;
 import com.example.hostgame.domain.GameStage;
-import com.example.hostgame.domain.Player;
 import com.example.hostgame.domain.PlayerControllerType;
+import com.example.hostgame.domain.Player;
 import com.example.hostgame.domain.PlayerStatus;
+import com.example.hostgame.domain.RoomObjective;
 import com.example.hostgame.domain.RoomStatus;
 import com.example.hostgame.domain.Vote;
+import com.example.hostgame.domain.Faction;
 import com.example.hostgame.dto.AvailableActionsUpdatedView;
 import com.example.hostgame.dto.GameEndedView;
 import com.example.hostgame.dto.PlayerEliminatedView;
@@ -71,6 +74,7 @@ public class GameFlowEngine {
         room.setStageStartedAt(now);
         room.setStageEndsAt(now.plusSeconds(room.getFlowConfig().getDiscussionSeconds()));
         room.setRound(1);
+        assignHiddenIdentities(room);
         gameStore.saveRoom(room);
 
         hostService.announcePublicMessage(roomId, "Game started. Discussion phase begins.");
@@ -156,7 +160,10 @@ public class GameFlowEngine {
         }
 
         if (alivePlayerCount(room) <= 3) {
-            return enterEnded(room, now);
+            return enterEnded(room, now, "FINAL_GROUP");
+        }
+        if (room.getRound() >= room.getFlowConfig().getMaxRounds()) {
+            return enterEnded(room, now, "MAX_ROUNDS_REACHED");
         }
         return enterNextDiscussion(room, now);
     }
@@ -218,7 +225,7 @@ public class GameFlowEngine {
         return alivePlayerCount > 0 && votedAlivePlayerCount >= alivePlayerCount;
     }
 
-    private GameRoom enterEnded(GameRoom room, Instant now) {
+    private GameRoom enterEnded(GameRoom room, Instant now, String reasonCode) {
         room.setRoomStatus(RoomStatus.ENDED);
         room.setCurrentStage(GameStage.ENDED);
         room.setStageStartedAt(now);
@@ -226,11 +233,18 @@ public class GameFlowEngine {
         room.setEndedAt(now);
         gameStore.saveRoom(room);
 
-        hostService.announcePublicMessage(room.getRoomId(), "Game ended. Revealing final identities.");
+        if ("MAX_ROUNDS_REACHED".equals(reasonCode)) {
+            hostService.announcePublicMessage(
+                    room.getRoomId(),
+                    "Game ended after reaching max rounds. Revealing final identities."
+            );
+        } else {
+            hostService.announcePublicMessage(room.getRoomId(), "Game ended. Revealing final identities.");
+        }
         broadcastStageChanged(room);
         webSocketBroadcaster.broadcastRoomEvent(
                 room.getRoomId(),
-                WsEvent.of(WsEventType.GAME_ENDED, buildGameEndedView(room))
+                WsEvent.of(WsEventType.GAME_ENDED, buildGameEndedView(room, reasonCode))
         );
         webSocketBroadcaster.broadcastRoomEvent(
                 room.getRoomId(),
@@ -240,7 +254,7 @@ public class GameFlowEngine {
         return room;
     }
 
-    private GameEndedView buildGameEndedView(GameRoom room) {
+    private GameEndedView buildGameEndedView(GameRoom room, String reasonCode) {
         int aliveAiCount = (int) room.getPlayers().stream()
                 .filter(Player::isAlive)
                 .filter(player -> player.getControllerType() == PlayerControllerType.AI)
@@ -249,24 +263,44 @@ public class GameFlowEngine {
                 .filter(Player::isAlive)
                 .filter(player -> player.getControllerType() == PlayerControllerType.HUMAN)
                 .count();
+        int aliveTraitorCount = (int) room.getPlayers().stream()
+                .filter(Player::isAlive)
+                .filter(this::isTraitor)
+                .count();
+        int aliveCrewCount = (int) room.getPlayers().stream()
+                .filter(Player::isAlive)
+                .filter(player -> !isTraitor(player))
+                .count();
 
         String resultCode;
         String resultMessage;
-        if (aliveAiCount == 0) {
-            resultCode = "HUMANS_WIN";
-            resultMessage = "No AI players remain.";
-        } else if (aliveAiCount == 1) {
-            resultCode = "AI_SURVIVED";
-            resultMessage = "One AI player survived to the final group.";
+        if (aliveTraitorCount > 0) {
+            resultCode = room.getObjective() == RoomObjective.FIND_AI ? "AI_WIN" : "TRAITOR_WIN";
+            if (room.getObjective() == RoomObjective.FIND_AI) {
+                resultMessage = "At least one AI survived to the final verdict.";
+            } else {
+                resultMessage = "At least one traitor survived to the final verdict.";
+            }
         } else {
-            resultCode = "AI_DOMINATED";
-            resultMessage = "Multiple AI players survived to the final group.";
+            resultCode = room.getObjective() == RoomObjective.FIND_AI ? "HUMAN_WIN" : "CREW_WIN";
+            if (room.getObjective() == RoomObjective.FIND_AI) {
+                resultMessage = "All AI players were eliminated.";
+            } else {
+                resultMessage = "All traitors were eliminated.";
+            }
+        }
+        if ("MAX_ROUNDS_REACHED".equals(reasonCode)) {
+            resultMessage = resultMessage + " (Max rounds reached.)";
         }
 
         return new GameEndedView(
                 room.getRoomId(),
+                room.getObjective(),
+                reasonCode,
                 resultCode,
                 resultMessage,
+                aliveCrewCount,
+                aliveTraitorCount,
                 aliveHumanCount,
                 aliveAiCount,
                 room.getPlayers().stream()
@@ -274,6 +308,39 @@ public class GameFlowEngine {
                         .toList(),
                 room.getEndedAt()
         );
+    }
+
+    private void assignHiddenIdentities(GameRoom room) {
+        if (room.getObjective() == RoomObjective.FIND_TRAITOR) {
+            Player traitor = room.getPlayers().stream()
+                    .filter(player -> player.getControllerType() == PlayerControllerType.HUMAN)
+                    .findFirst()
+                    .orElse(room.getPlayers().get(0));
+            room.getPlayers().forEach(player -> {
+                if (player.getPlayerId().equals(traitor.getPlayerId())) {
+                    player.setFaction(Faction.WEREWOLF);
+                    player.setRole(GameRole.WEREWOLF);
+                } else {
+                    player.setFaction(Faction.VILLAGE);
+                    player.setRole(GameRole.VILLAGER);
+                }
+            });
+            return;
+        }
+
+        room.getPlayers().forEach(player -> {
+            if (player.getControllerType() == PlayerControllerType.AI) {
+                player.setFaction(Faction.WEREWOLF);
+                player.setRole(GameRole.WEREWOLF);
+            } else {
+                player.setFaction(Faction.VILLAGE);
+                player.setRole(GameRole.VILLAGER);
+            }
+        });
+    }
+
+    private boolean isTraitor(Player player) {
+        return player.getFaction() == Faction.WEREWOLF;
     }
 
     private long alivePlayerCount(GameRoom room) {

@@ -87,6 +87,31 @@ p,
   margin-bottom: 18px;
 }
 
+.room-config-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  margin-bottom: 14px;
+}
+
+.room-config-grid label {
+  color: #606978;
+  display: grid;
+  font-size: 13px;
+  gap: 6px;
+}
+
+.room-config-grid input,
+.room-config-grid select {
+  border: 1px solid #cbd2dd;
+  border-radius: 6px;
+  color: #20242c;
+  font: inherit;
+  min-height: 36px;
+  min-width: 0;
+  padding: 0 10px;
+}
+
 .content-grid {
   align-items: start;
   display: grid;
@@ -145,12 +170,12 @@ p,
 }
 
 .player-badge {
-  background: #e9f0ff;
+  border: 1px solid transparent;
   border-radius: 999px;
-  color: #28529b;
-  font-size: 13px;
-  font-weight: 750;
-  padding: 6px 10px;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0;
+  padding: 8px 14px;
   white-space: nowrap;
 }
 
@@ -222,6 +247,7 @@ p,
 .message {
   background: #f7f8fa;
   border-radius: 8px;
+  border-left: 4px solid transparent;
   padding: 10px 12px;
 }
 
@@ -270,6 +296,10 @@ p,
   .content-grid,
   .game-grid,
   .room-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .room-config-grid {
     grid-template-columns: 1fr;
   }
 

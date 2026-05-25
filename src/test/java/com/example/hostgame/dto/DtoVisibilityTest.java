@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.example.hostgame.domain.GameRoom;
 import com.example.hostgame.domain.Player;
 import com.example.hostgame.domain.PlayerControllerType;
+import com.example.hostgame.domain.RoomObjective;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Instant;
 import java.util.List;
@@ -40,8 +41,12 @@ class DtoVisibilityTest {
 
         GameEndedView view = new GameEndedView(
                 room.getRoomId(),
+                RoomObjective.FIND_AI,
+                "FINAL_GROUP",
                 "AI_SURVIVED",
                 "One AI player survived to the final group.",
+                0,
+                1,
                 0,
                 1,
                 room.getPlayers().stream().map(PlayerRevealView::from).toList(),

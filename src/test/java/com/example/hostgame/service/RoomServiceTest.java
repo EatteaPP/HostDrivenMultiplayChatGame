@@ -5,10 +5,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.example.hostgame.domain.GameRoom;
 import com.example.hostgame.domain.GameStage;
-import com.example.hostgame.domain.GameType;
 import com.example.hostgame.domain.Player;
 import com.example.hostgame.domain.PlayerControllerType;
 import com.example.hostgame.domain.RoomStatus;
+import com.example.hostgame.domain.RoomObjective;
+import com.example.hostgame.dto.CreateRoomRequest;
 import com.example.hostgame.store.InMemoryGameStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -24,11 +25,25 @@ class RoomServiceTest {
 
     @Test
     void createRoomCreatesWaitingRoomWithoutPlayers() {
-        GameRoom room = roomService.createRoom(GameType.AI_CHAT_WEREWOLF);
+        GameRoom room = roomService.createRoom(new CreateRoomRequest(
+                null,
+                RoomObjective.FIND_TRAITOR,
+                "找出女性",
+                120,
+                45,
+                12,
+                10
+        ));
 
         assertThat(room.getRoomId()).isNotBlank();
         assertThat(room.getRoomStatus()).isEqualTo(RoomStatus.WAITING);
         assertThat(room.getCurrentStage()).isEqualTo(GameStage.WAITING);
+        assertThat(room.getObjective()).isEqualTo(RoomObjective.FIND_TRAITOR);
+        assertThat(room.getObjectiveHint()).isEqualTo("找出女性");
+        assertThat(room.getFlowConfig().getDiscussionSeconds()).isEqualTo(120);
+        assertThat(room.getFlowConfig().getVotingSeconds()).isEqualTo(45);
+        assertThat(room.getFlowConfig().getMessageCooldownSeconds()).isEqualTo(12);
+        assertThat(room.getFlowConfig().getMaxRounds()).isEqualTo(10);
         assertThat(room.getPlayers()).isEmpty();
     }
 
@@ -58,5 +73,21 @@ class RoomServiceTest {
     void getRoomRejectsUnknownRoomId() {
         assertThatThrownBy(() -> roomService.getRoom("missing-room"))
                 .isInstanceOf(RoomNotFoundException.class);
+    }
+
+    @Test
+    void createRoomWithoutRequestDefaultsToFindTraitorObjective() {
+        GameRoom room = roomService.createRoom(null);
+
+        assertThat(room.getObjective()).isEqualTo(RoomObjective.FIND_TRAITOR);
+    }
+
+    @Test
+    void joinAiPlayerRejectedWhenObjectiveIsNotFindAi() {
+        GameRoom room = roomService.createRoom(null);
+
+        assertThatThrownBy(() -> roomService.joinAiPlayer(room.getRoomId()))
+                .isInstanceOf(ActionRejectedException.class)
+                .hasMessageContaining("FIND_AI");
     }
 }

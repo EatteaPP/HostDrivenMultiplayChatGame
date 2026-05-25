@@ -5,6 +5,7 @@ public class GameFlowConfig {
     private int discussionSeconds = 300;
     private int votingSeconds = 60;
     private int messageCooldownSeconds = 15;
+    private int maxRounds = 10;
 
     public int getDiscussionSeconds() {
         return discussionSeconds;
@@ -28,5 +29,13 @@ public class GameFlowConfig {
 
     public void setMessageCooldownSeconds(int messageCooldownSeconds) {
         this.messageCooldownSeconds = messageCooldownSeconds;
+    }
+
+    public int getMaxRounds() {
+        return maxRounds;
+    }
+
+    public void setMaxRounds(int maxRounds) {
+        this.maxRounds = maxRounds;
     }
 }

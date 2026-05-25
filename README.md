@@ -26,6 +26,7 @@
 - `DEMO_GUIDE.md`：本機 demo 的操作步驟
 - `MVP_PHASE_PLAN.md`：專案的 MVP 規劃與開發順序
 - `AGENTS.md`：本專案的 agent / coding workflow 規則
+- `TEMP_SCOPE_NOTE.md`：暫時收斂說明（原始 AI 題目不變，MVP 過渡期可先用真人叛徒模式）
 
 ## 技術堆疊
 
@@ -34,6 +35,16 @@
 - Store：In-memory
 
 ## 快速開始
+
+### 一鍵啟動前後端（Windows PowerShell）
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\start-dev.ps1
+```
+
+會自動開兩個新視窗，標題分別是：
+- `HostGame Backend (Spring Boot)`
+- `HostGame Frontend (Vite)`
 
 ### 後端
 
@@ -47,8 +58,8 @@ mvn spring-boot:run
 
 ```powershell
 cd frontend
-npm install
-npm run dev
+npm.cmd install
+npm.cmd run dev
 ```
 
 預設前端會啟動在 `http://127.0.0.1:5173`。
@@ -67,5 +78,7 @@ npm run dev
 - 前端只根據後端提供的 `availableActions` 決定可顯示的 UI
 - 所有玩家操作都必須送到後端驗證
 - 遊戲結束前，不應揭露玩家是否為 AI / Human
+- 建立房間時可設定目標（`找出叛徒` / `找出AI`）、討論秒數、投票秒數、發言 CD、最大輪次
+- 目前預設目標為 `找出叛徒`；只有目標為 `找出AI` 時才允許加入 AI 玩家
 
 若你想繼續擴充這個專案，可以先從 `MVP_PHASE_PLAN.md` 裡的下一個 phase 開始。

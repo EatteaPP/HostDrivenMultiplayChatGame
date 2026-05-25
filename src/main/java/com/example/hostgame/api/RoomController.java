@@ -44,7 +44,7 @@ public class RoomController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public RoomView createRoom(@RequestBody(required = false) CreateRoomRequest request) {
-        GameRoom room = roomService.createRoom(request == null ? null : request.gameType());
+        GameRoom room = roomService.createRoom(request);
         RoomView roomView = RoomView.from(room);
         webSocketBroadcaster.broadcastRoomEvent(
                 room.getRoomId(),

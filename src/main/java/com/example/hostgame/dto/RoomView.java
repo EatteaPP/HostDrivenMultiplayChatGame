@@ -3,6 +3,7 @@ package com.example.hostgame.dto;
 import com.example.hostgame.domain.GameRoom;
 import com.example.hostgame.domain.GameStage;
 import com.example.hostgame.domain.GameType;
+import com.example.hostgame.domain.RoomObjective;
 import com.example.hostgame.domain.RoomStatus;
 import java.time.Instant;
 import java.util.List;
@@ -10,6 +11,8 @@ import java.util.List;
 public record RoomView(
         String roomId,
         GameType gameType,
+        RoomObjective objective,
+        String objectiveHint,
         RoomStatus roomStatus,
         GameStage currentStage,
         List<PlayerPublicView> players,
@@ -19,13 +22,19 @@ public record RoomView(
         Instant stageStartedAt,
         Instant stageEndsAt,
         Instant endedAt,
-        int round
+        int round,
+        int discussionSeconds,
+        int votingSeconds,
+        int messageCooldownSeconds,
+        int maxRounds
 ) {
 
     public static RoomView from(GameRoom room) {
         return new RoomView(
                 room.getRoomId(),
                 room.getGameType(),
+                room.getObjective(),
+                room.getObjectiveHint(),
                 room.getRoomStatus(),
                 room.getCurrentStage(),
                 room.getPlayers().stream()
@@ -39,7 +48,11 @@ public record RoomView(
                 room.getStageStartedAt(),
                 room.getStageEndsAt(),
                 room.getEndedAt(),
-                room.getRound()
+                room.getRound(),
+                room.getFlowConfig().getDiscussionSeconds(),
+                room.getFlowConfig().getVotingSeconds(),
+                room.getFlowConfig().getMessageCooldownSeconds(),
+                room.getFlowConfig().getMaxRounds()
         );
     }
 }

@@ -4,7 +4,9 @@ import com.example.hostgame.domain.GameRoom;
 import com.example.hostgame.domain.GameType;
 import com.example.hostgame.domain.Player;
 import com.example.hostgame.domain.PlayerControllerType;
+import com.example.hostgame.domain.RoomObjective;
 import com.example.hostgame.domain.RoomStatus;
+import com.example.hostgame.dto.CreateRoomRequest;
 import com.example.hostgame.store.GameStore;
 import java.util.List;
 import org.springframework.stereotype.Service;
@@ -29,10 +31,56 @@ public class RoomService {
         this.gameStore = gameStore;
     }
 
-    public GameRoom createRoom(GameType requestedGameType) {
+    public GameRoom createRoom(CreateRoomRequest request) {
         GameRoom room = new GameRoom();
+        GameType requestedGameType = request == null ? null : request.gameType();
         room.setGameType(requestedGameType == null ? GameType.AI_CHAT_WEREWOLF : requestedGameType);
+        RoomObjective requestedObjective = request == null ? null : request.objective();
+        room.setObjective(requestedObjective == null ? RoomObjective.FIND_TRAITOR : requestedObjective);
+        room.setObjectiveHint(normalizeObjectiveHint(request == null ? null : request.objectiveHint()));
+        applyFlowConfig(room, request);
         return gameStore.saveRoom(room);
+    }
+
+    private String normalizeObjectiveHint(String objectiveHint) {
+        if (objectiveHint == null) {
+            return null;
+        }
+        String trimmed = objectiveHint.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        if (trimmed.length() > 120) {
+            throw new ActionRejectedException("objectiveHint must be 120 characters or fewer.");
+        }
+        return trimmed;
+    }
+
+    private void applyFlowConfig(GameRoom room, CreateRoomRequest request) {
+        if (request == null) {
+            return;
+        }
+        if (request.discussionSeconds() != null) {
+            room.getFlowConfig().setDiscussionSeconds(requirePositive(request.discussionSeconds(), "discussionSeconds"));
+        }
+        if (request.votingSeconds() != null) {
+            room.getFlowConfig().setVotingSeconds(requirePositive(request.votingSeconds(), "votingSeconds"));
+        }
+        if (request.messageCooldownSeconds() != null) {
+            room.getFlowConfig().setMessageCooldownSeconds(
+                    requirePositive(request.messageCooldownSeconds(), "messageCooldownSeconds")
+            );
+        }
+        if (request.maxRounds() != null) {
+            room.getFlowConfig().setMaxRounds(requirePositive(request.maxRounds(), "maxRounds"));
+        }
+    }
+
+    private int requirePositive(int value, String fieldName) {
+        if (value <= 0) {
+            throw new ActionRejectedException(fieldName + " must be greater than 0.");
+        }
+        return value;
     }
 
     public List<GameRoom> findRooms(RoomStatus status) {
@@ -52,6 +100,10 @@ public class RoomService {
     }
 
     public Player joinAiPlayer(String roomId) {
+        GameRoom room = getRoom(roomId);
+        if (room.getObjective() != RoomObjective.FIND_AI) {
+            throw new ActionRejectedException("AI players are only allowed when objective is FIND_AI.");
+        }
         return joinRoom(roomId, PlayerControllerType.AI);
     }
 
